@@ -1,0 +1,3 @@
+string acceptor_id
+string proposer_id
+int64 accepted_number

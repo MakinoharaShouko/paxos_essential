@@ -1,0 +1,21 @@
+<launch>
+    <param name="/acceptors" value="4" />
+    <param name="/proposers" value="9" />
+
+    <node pkg="paxos_essential" type="learner.py" name="learner" output="screen"/>
+
+    <node pkg="paxos_essential" type="acceptor.py" name="accpetor1" output="screen"/>
+    <node pkg="paxos_essential" type="acceptor.py" name="accpetor2" output="screen"/>
+    <node pkg="paxos_essential" type="acceptor.py" name="accpetor3" output="screen"/>
+    <node pkg="paxos_essential" type="acceptor.py" name="accpetor4" output="screen"/>
+
+    <node pkg="paxos_essential" type="proposer.py" name="proposer1" output="screen"/>
+    <node pkg="paxos_essential" type="proposer.py" name="proposer2" output="screen"/>
+    <node pkg="paxos_essential" type="proposer.py" name="proposer3" output="screen"/>
+    <node pkg="paxos_essential" type="proposer.py" name="proposer4" output="screen"/>
+    <node pkg="paxos_essential" type="proposer.py" name="proposer5" output="screen"/>
+    <node pkg="paxos_essential" type="proposer.py" name="proposer6" output="screen"/>
+    <node pkg="paxos_essential" type="proposer.py" name="proposer7" output="screen"/>
+    <node pkg="paxos_essential" type="proposer.py" name="proposer8" output="screen"/>
+    <node pkg="paxos_essential" type="proposer.py" name="proposer9" output="screen"/>
+</launch>

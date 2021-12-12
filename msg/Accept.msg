@@ -1,0 +1,2 @@
+string proposer_id
+int64 proposal_number
