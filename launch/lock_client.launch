@@ -1,0 +1,4 @@
+<launch>
+    <param name="num_locks" value="2" />
+    <node pkg="paxos_essential" type="lock_client.py" name="lock_client" output="screen" />
+</launch>

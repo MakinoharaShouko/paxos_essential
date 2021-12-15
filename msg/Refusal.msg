@@ -1,0 +1,3 @@
+int64 instance
+int64 promised_proposal_num
+string promised_proposer_id

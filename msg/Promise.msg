@@ -1,3 +1,7 @@
-string acceptor_id
+int64 instance
+int64 proposal_numb
 string proposer_id
-int64 accepted_number
+string acceptor_id
+int64 accepted_proposal_num
+int64 accepted_proposer_id
+int64 accepted_value

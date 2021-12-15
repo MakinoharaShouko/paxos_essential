@@ -1,2 +1,4 @@
+int64 instance
+int64 proposal_num
 string proposer_id
-int64 proposal_number
+int64 proposed_value
