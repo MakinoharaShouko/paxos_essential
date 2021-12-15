@@ -1,6 +1,6 @@
 import rospy
 import uuid
-from msg import *
+from paxos_essential.msg import *
 from sched import scheduler
 from time import time
 

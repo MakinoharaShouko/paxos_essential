@@ -24,7 +24,7 @@ roslaunch_add_file_check(launch)
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
 ## See http://ros.org/doc/api/catkin/html/user_guide/setup_dot_py.html
-# catkin_python_setup()
+catkin_python_setup()
 
 ################################################
 ## Declare ROS messages, services and actions ##
@@ -57,6 +57,10 @@ add_message_files(
   Promise.msg
   Accept.msg
   Accepted.msg
+  Finalized.msg
+  Refusal.msg
+  ClientRequest.msg
+  ClientResponse.msg
 )
 
 ## Generate services in the 'srv' folder
@@ -167,9 +171,12 @@ include_directories(
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(PROGRAMS
-  src/proposer.py
-  src/acceptor.py
-  src/learner.py
+  src/paxos_essential/proposer.py
+  src/paxos_essential/acceptor.py
+  src/paxos_essential/learner.py
+  src/paxos_essential/lock_client.py
+  src/paxos_essential/lock_server.py
+  src/paxos_essential/paxos.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

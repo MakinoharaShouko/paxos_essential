@@ -1,6 +1,6 @@
 import rospy
 import uuid
-from msg import ClientRequest, ClientResponse
+from paxos_essential.msg import ClientRequest, ClientResponse
 
 
 def handle_reponse(response):
