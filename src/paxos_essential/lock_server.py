@@ -20,15 +20,11 @@ def return_lock(lock_no, avaialble):
 
 
 if __name__ == '__main__':
-    leader = False
-    if len(sys.argv) == 2:
-        leader = (sys.argv[1] == '--leader')
-    rospy.init_node('lock_server')
-
     num_locks = rospy.get_param('num_locks')
     init_state = [1 for _ in range(num_locks)]
     transitions = [partial(acquire_lock, i) for i in range(num_locks)] + \
         [partial(return_lock, i) for i in range(num_locks)]
+    leader = (sys.argv[1] == 'leader')
 
-    PaxosRSM(init_state, transitions, leader=leader)
+    PaxosRSM(init_state, transitions, leader)
     rospy.spin()

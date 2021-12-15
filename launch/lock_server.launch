@@ -4,7 +4,7 @@
     <param name="tick_period" value="1" />
     <param name="live_window" value="5" />
 
-    <node pkg="paxos_essential" type="lock_server.py" name="lock_server_0" output="screen" args="--leader" />
+    <node pkg="paxos_essential" type="lock_server.py" name="lock_server_0" output="screen" args="leader" />
     <node pkg="paxos_essential" type="lock_server.py" name="lock_server_1" output="screen" />
     <node pkg="paxos_essential" type="lock_server.py" name="lock_server_2" output="screen" />
     <node pkg="paxos_essential" type="lock_server.py" name="lock_server_3" output="screen" />

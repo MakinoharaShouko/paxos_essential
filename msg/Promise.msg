@@ -1,5 +1,5 @@
 int64 instance
-int64 proposal_numb
+int64 proposal_num
 string proposer_id
 string acceptor_id
 int64 accepted_proposal_num

@@ -2,7 +2,7 @@ import rospy
 import uuid
 from paxos_essential.msg import *
 from sched import scheduler
-from time import time
+from time import time, sleep
 
 
 class Proposer():
@@ -16,8 +16,9 @@ class Proposer():
         self.majority = rospy.get_param('majority')
         self.proposal_num = -1
         self.proposed_value = None
+        self.proposal_id = (-1, '')
         self.promise_received = set()
-        self.max_accepted_proposal_id = None
+        self.max_accepted_proposal_id = (-1, '')
 
     def observe_proposal(self, proposal_num, proposer_id):
         proposal_id = (proposal_num, proposer_id)
@@ -28,8 +29,8 @@ class Proposer():
         self.promise_received = set()
         self.proposal_num += 1
         self.proposal_id = (self.proposal_num, self.uid)
+        self.proposed_value = proposed_value
         if self.leader:
-            self.proposed_value = proposed_value
             self.accept_pub.publish(
                 instance=self.instance,
                 proposal_num=self.proposal_num,
@@ -61,26 +62,25 @@ class Proposer():
             self.proposed_value = promise.accepted_value
 
         if len(self.promise_received) == self.majority:
-            if self.proposed_value is not None:
-                self.accept_pub.publish(
-                    instance=self.instance,
-                    proposal_num=promise.proposal_num,
-                    proposer_id=promise.proposer_id,
-                    proposed_value=self.proposed_value
-                )
-            else:
-                self.leader = True
+            self.leader = True
+            self.accept_pub.publish(
+                instance=self.instance,
+                proposal_num=promise.proposal_num,
+                proposer_id=promise.proposer_id,
+                proposed_value=self.proposed_value
+            )
 
 
 class Acceptor():
-    def __init__(self, uid, instance, accepted_pub, refuse_prepare_pub, refuse_accept_pub):
+    def __init__(self, uid, instance, promise_pub, accepted_pub, refuse_prepare_pub, refuse_accept_pub):
         self.uid = uid
         self.instance = instance
+        self.promise_pub = promise_pub
         self.accepted_pub = accepted_pub
         self.refuse_prepare_pub = refuse_prepare_pub
         self.refuse_accept_pub = refuse_accept_pub
 
-        self.promised_id = None
+        self.promised_id = (-1, '')
         self.accepted_proposal_num = None
         self.accepted_proposer_id = None
         self.accepted_value = None
@@ -100,7 +100,7 @@ class Acceptor():
             )
         else:
             promised_proposal_num, promised_proposer_id = self.promised_id
-            self.refuse_prepare.publish(
+            self.refuse_prepare_pub.publish(
                 instance=prepare.instance,
                 promised_proposal_num=promised_proposal_num,
                 promised_proposer_id=promised_proposer_id
@@ -116,12 +116,12 @@ class Acceptor():
                 instance=accept.instance,
                 acceptor_id=self.uid,
                 proposal_num=self.accepted_proposal_num,
-                proposal_id=self.accepted_proposer_id,
+                proposer_id=self.accepted_proposer_id,
                 accepted_value=self.accepted_value
             )
         else:
             promised_proposal_num, promised_proposer_id = self.promised_id
-            self.refuse_accept.publish(
+            self.refuse_accept_pub.publish(
                 instance=accept.instance,
                 promised_proposal_num=promised_proposal_num,
                 promised_proposer_id=promised_proposer_id
@@ -150,11 +150,11 @@ class Learner():
             return
 
         proposal_id = (accepted.proposal_num, accepted.proposer_id)
-        accepted_proposal_id = self.accepted_proposals.get(accepted.acceptor_pid)
-        if accepted_proposal_id >= proposal_id:
+        accepted_proposal_id = self.accepted_proposals.get(accepted.acceptor_id)
+        if accepted_proposal_id is not None and accepted_proposal_id >= proposal_id:
             return
 
-        self.accepted_proposals[accepted.acceptor_pid] = proposal_id
+        self.accepted_proposals[accepted.acceptor_id] = proposal_id
         if accepted_proposal_id is not None:
             self.proposal_counts[accepted_proposal_id][0].remove(accepted.acceptor_id)
         if proposal_id not in self.proposal_counts:
@@ -182,6 +182,9 @@ class PaxosRSM():
         self.cached_values = {}
         self.running_instances = {}
 
+        rospy.init_node('paxos_node')
+        rospy.loginfo(f'{rospy.get_name()} started, leader={str(leader)}')
+
         self.tick_pub = rospy.Publisher('tick', Tick, queue_size=10)
         self.prepare_pub = rospy.Publisher('prepare', Prepare, queue_size=10)
         self.promise_pub = rospy.Publisher('promise', Promise, queue_size=10)
@@ -203,16 +206,25 @@ class PaxosRSM():
         self.finalized_sub = rospy.Subscriber('finalized', Finalized, self.handle_finalized)
 
         self.leader = leader
-        self.leader_proposal_id = None
+        self.leader_proposal_id = (0, self.uid) if leader else (-1, '')
         self.tick_period = rospy.get_param('tick_period')
         self.live_window = rospy.get_param('live_window')
         self.last_tick = time()
         self.last_prep = time()
         self.refusals = {}
-        if leader:
-            self.leader_proposal_id = (0, self.uid)
-            self.tick()
-        self.check_leader()
+
+        self.run()
+    
+    def run(self):
+        i = 0
+        while True:
+            if self.leader:
+                self.tick()
+            sleep(self.tick_period)
+            i += self.tick_period
+            if i >= self.live_window:
+                self.check_leader()
+                i = 0
 
     def tick(self):
         proposal_num, proposer_id = self.leader_proposal_id
@@ -220,15 +232,18 @@ class PaxosRSM():
         tick.proposal_num = proposal_num
         tick.proposer_id=proposer_id
         self.tick_pub.publish(tick)
-        s = scheduler(time)
-        s.enter(self.tick_period, 1, self.tick)
+        rospy.loginfo(f'{rospy.get_name()} sent tick')
+        # s = scheduler(time, sleep)
+        # s.enter(self.tick_period, 1, self.tick)
 
     def check_leader(self):
+        rospy.loginfo(f'{rospy.get_name()} no tick time {time() - self.last_tick}')
         if not self.leader_alive() and not self.recent_prepare():
+            self.current_instance += 1
             self.refusals[self.current_instance] = 0
             self.get_proposer(self.current_instance).prepare()
-        s = scheduler(time)
-        s.enter(self.live_window, 2, self.check_leader)
+        # s = scheduler(time, sleep)
+        # s.enter(self.live_window, 2, self.check_leader)
 
     def leader_alive(self):
         return time() - self.last_tick <= self.live_window
@@ -237,6 +252,7 @@ class PaxosRSM():
         return time() - self.last_prep <= self.live_window * 1.5
 
     def handle_tick(self, tick):
+        rospy.loginfo(f'{rospy.get_name()} received tick')
         proposal_id = (tick.proposal_num, tick.proposer_id)
         if proposal_id >= self.leader_proposal_id:
             self.last_tick = time()
@@ -247,13 +263,16 @@ class PaxosRSM():
 
     def get_proposer(self, instance):
         if self.proposers.get(instance) is None:
-            self.proposers[instance] = Proposer(self.uid, instance, self.prepare_pub, self.accept_pub)
+            self.proposers[instance] = Proposer(
+                self.uid, instance, self.leader, self.prepare_pub, self.accept_pub
+            )
         return self.proposers[instance]
 
     def get_acceptor(self, instance):
         if self.acceptors.get(instance) is None:
             self.acceptors[instance] = Acceptor(
-                self.uid, instance, self.accept_pub, self.refuse_prepare_pub, self.refuse_accept_pub
+                self.uid, instance, self.promise_pub, self.accepted_pub,
+                self.refuse_prepare_pub, self.refuse_accept_pub
             )
         return self.acceptors[instance]
 
@@ -299,6 +318,7 @@ class PaxosRSM():
             if self.leader and self.refusals[refuse_accept.instance] >= self.majority:
                 self.leader = False
                 self.leader_proposal_id = None
+                rospy.loginfo(f'{rospy.get_name()} lost leadership')
 
     def handle_accepted(self, accepted):
         if self.leader:
@@ -316,6 +336,7 @@ class PaxosRSM():
             self.instance_to_exe += 1
 
     def leadership_acquired(self):
+        rospy.loginfo(f'{rospy.get_name()} acquired leadership')
         running_instances_new = {}
         for instance, value in self.running_instances:
             self.refusals[instance] = 0

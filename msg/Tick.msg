@@ -1,2 +1,2 @@
 int64 proposal_num
-int64 proposer_id
+string proposer_id
