@@ -61,6 +61,7 @@ add_message_files(
   Refusal.msg
   ClientRequest.msg
   ClientResponse.msg
+  Tick.msg
 )
 
 ## Generate services in the 'srv' folder

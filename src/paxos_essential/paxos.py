@@ -216,7 +216,10 @@ class PaxosRSM():
 
     def tick(self):
         proposal_num, proposer_id = self.leader_proposal_id
-        self.tick_pub.publish(proposal_num=proposal_num, proposer_id=proposer_id)
+        tick = Tick()
+        tick.proposal_num = proposal_num
+        tick.proposer_id=proposer_id
+        self.tick_pub.publish(tick)
         s = scheduler(time)
         s.enter(self.tick_period, 1, self.tick)
 
@@ -233,13 +236,13 @@ class PaxosRSM():
     def recent_prepare(self):
         return time() - self.last_prep <= self.live_window * 1.5
 
-    def handle_tick(self, proposal_num, proposer_id):
-        proposal_id = (proposal_num, proposer_id)
+    def handle_tick(self, tick):
+        proposal_id = (tick.proposal_num, tick.proposer_id)
         if proposal_id >= self.leader_proposal_id:
             self.last_tick = time()
             if proposal_id > self.leader_proposal_id:
                 self.leader_proposal_id = proposal_id
-                if self.leader and proposer_id != self.uid:
+                if self.leader and tick.proposer_id != self.uid:
                     self.leader = False
 
     def get_proposer(self, instance):
