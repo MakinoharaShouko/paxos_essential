@@ -1,7 +1,6 @@
 import rospy
 import uuid
 from paxos_essential.msg import *
-from sched import scheduler
 from time import time, sleep
 
 
@@ -129,7 +128,7 @@ class Acceptor():
 
 
 class Learner():
-    def __init__(self, uid, instance, finalized_pub):
+    def __init__(self, uid, instance, accepted_pub, finalized_pub):
         self.uid = uid
         self.instance = instance
         self.majority = rospy.get_param('majority')
@@ -137,6 +136,7 @@ class Learner():
         self.accepted_proposals = {} # acceptor_id -> proposal_id
         self.final_acceptors = set()
         self.final_value = None
+        self.accepted_pub = accepted_pub
         self.finalized_pub = finalized_pub
 
     @property
@@ -157,22 +157,34 @@ class Learner():
         self.accepted_proposals[accepted.acceptor_id] = proposal_id
         if accepted_proposal_id is not None:
             self.proposal_counts[accepted_proposal_id][0].remove(accepted.acceptor_id)
-        if proposal_id not in self.proposal_counts:
+        if self.proposal_counts.get(proposal_id) is None:
             self.proposal_counts[proposal_id] = [set(), accepted.accepted_value]
+        else:
+            try:
+                assert accepted.accepted_value == self.proposal_counts[proposal_id][1]
+            except:
+                rospy.logerr(f'Inconsistent value for proposal {proposal_id}')
         self.proposal_counts[proposal_id][0].add(accepted.acceptor_id)
+        rospy.loginfo(f'{proposal_id} {len(self.proposal_counts[proposal_id][0])}')
 
         if len(self.proposal_counts[proposal_id][0]) == self.majority:
             self.final_acceptors, self.final_value = self.proposal_counts[proposal_id]
-            self.proposal_counts = None
-            self.accepted_proposals = None
             self.finalized_pub.publish(instance=self.instance, value=self.final_value)
+        else:
+            self.accepted_pub.publish(
+                instance=accepted.instance,
+                acceptor_id=accepted.acceptor_id,
+                proposal_num=accepted.proposal_num,
+                proposer_id=accepted.proposer_id,
+                accepted_value=accepted.accepted_value
+            )
 
 
 class PaxosRSM():
     def __init__(self, init_state, transitions, leader=False):
         self.uid = str(uuid.uuid4())
         self.state = init_state
-        self.transitions = transitions
+        self.transitions = [lambda x: x] + transitions
         self.current_instance = -1
         self.instance_to_exe = 0
         self.proposers = {}
@@ -183,7 +195,7 @@ class PaxosRSM():
         self.running_instances = {}
 
         rospy.init_node('paxos_node')
-        rospy.loginfo(f'{rospy.get_name()} started, leader={str(leader)}')
+        rospy.loginfo(f'{rospy.get_name()} started, uid={self.uid}, leader={str(leader)}')
 
         self.tick_pub = rospy.Publisher('tick', Tick, queue_size=10)
         self.prepare_pub = rospy.Publisher('prepare', Prepare, queue_size=10)
@@ -193,7 +205,7 @@ class PaxosRSM():
         self.refuse_accept_pub = rospy.Publisher('refuse_accept', Refusal, queue_size=10)
         self.accepted_pub = rospy.Publisher('accepted', Accepted, queue_size=10)
         self.finalized_pub = rospy.Publisher('finalized', Finalized, queue_size=10)
-        self.client_response_pub = rospy.Publisher('client_reponse', ClientResponse, queue_size=10)
+        self.client_response_pub = rospy.Publisher('client_response', ClientResponse, queue_size=10)
 
         self.client_request_sub = rospy.Subscriber('client_request', ClientRequest, self.handle_client_request)
         self.tick_sub = rospy.Subscriber('tick', Tick, self.handle_tick)
@@ -232,18 +244,12 @@ class PaxosRSM():
         tick.proposal_num = proposal_num
         tick.proposer_id=proposer_id
         self.tick_pub.publish(tick)
-        rospy.loginfo(f'{rospy.get_name()} sent tick')
-        # s = scheduler(time, sleep)
-        # s.enter(self.tick_period, 1, self.tick)
 
     def check_leader(self):
-        rospy.loginfo(f'{rospy.get_name()} no tick time {time() - self.last_tick}')
         if not self.leader_alive() and not self.recent_prepare():
             self.current_instance += 1
             self.refusals[self.current_instance] = 0
             self.get_proposer(self.current_instance).prepare()
-        # s = scheduler(time, sleep)
-        # s.enter(self.live_window, 2, self.check_leader)
 
     def leader_alive(self):
         return time() - self.last_tick <= self.live_window
@@ -252,7 +258,6 @@ class PaxosRSM():
         return time() - self.last_prep <= self.live_window * 1.5
 
     def handle_tick(self, tick):
-        rospy.loginfo(f'{rospy.get_name()} received tick')
         proposal_id = (tick.proposal_num, tick.proposer_id)
         if proposal_id >= self.leader_proposal_id:
             self.last_tick = time()
@@ -260,6 +265,7 @@ class PaxosRSM():
                 self.leader_proposal_id = proposal_id
                 if self.leader and tick.proposer_id != self.uid:
                     self.leader = False
+                    rospy.loginfo(f'{rospy.get_name()} lost leadership')
 
     def get_proposer(self, instance):
         if self.proposers.get(instance) is None:
@@ -278,7 +284,9 @@ class PaxosRSM():
 
     def get_learner(self, instance):
         if self.learners.get(instance) is None:
-            self.learners[instance] = Learner(self.uid, instance, self.finalized_pub)
+            self.learners[instance] = Learner(
+                self.uid, instance, self.accepted_pub, self.finalized_pub
+            )
         return self.learners[instance]
 
     def handle_client_request(self, client_request):
@@ -326,14 +334,17 @@ class PaxosRSM():
 
     def handle_finalized(self, finalized):
         self.get_learner(finalized.instance).final_value = finalized.value
-        client_id, value = self.running_instances.pop(finalized.instance)
-        self.cached_values[finalized.instance] = (client_id, finalized.value)
-        while self.instance_to_exe in self.cached_values:
-            client_id, value = self.cached_values.pop(self.instance_to_exe)
-            self.executed_values[self.instance_to_exe] = value
-            if value is not None:
-                self.state, output = self.transitions(self.state)
-            self.instance_to_exe += 1
+        if finalized.value != 0 and self.running_instances.get(finalized.instance) is not None:
+            client_id, value = self.running_instances.pop(finalized.instance)
+            self.cached_values[finalized.instance] = (client_id, finalized.value)
+            while self.instance_to_exe in self.cached_values:
+                client_id, value = self.cached_values.pop(self.instance_to_exe)
+                self.executed_values[self.instance_to_exe] = value
+                self.state, output = self.transitions[value](self.state)
+                self.client_response_pub.publish(
+                    instance=finalized.instance, client_id=client_id, output=output
+                )
+                self.instance_to_exe += 1
 
     def leadership_acquired(self):
         rospy.loginfo(f'{rospy.get_name()} acquired leadership')
