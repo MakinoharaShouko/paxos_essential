@@ -1,0 +1,11 @@
+<launch>
+    <param name="majority" value="5" />
+    <param name="num_locks" value="2" />
+    <param name="tick_period" value="1" />
+    <param name="live_window" value="5" />
+
+    <node pkg="paxos_essential" type="lock_server.py" name="lock_server_5" output="screen" args="leader" />
+    <node pkg="paxos_essential" type="lock_server.py" name="lock_server_6" output="screen" />
+    <node pkg="paxos_essential" type="lock_server.py" name="lock_server_7" output="screen" />
+    <node pkg="paxos_essential" type="lock_server.py" name="lock_server_8" output="screen" />
+</launch>

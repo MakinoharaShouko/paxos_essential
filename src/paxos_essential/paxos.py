@@ -23,6 +23,14 @@ class PaxosRSM():
         self.request_history = {}
         self.lock = Lock()
 
+        self.leader = leader
+        self.acquiring = False
+        self.leader_proposal_id = (0, self.uid) if leader else (-1, '')
+        self.tick_period = rospy.get_param('tick_period')
+        self.live_window = rospy.get_param('live_window')
+        self.last_tick = time()
+        self.last_prep = time()
+
         self.tick_pub = rospy.Publisher('tick', Tick, queue_size=10)
         self.prepare_pub = rospy.Publisher('prepare', Prepare, queue_size=10)
         self.promise_pub = rospy.Publisher('promise', Promise, queue_size=10)
@@ -42,14 +50,6 @@ class PaxosRSM():
         self.accepted_sub = rospy.Subscriber('accepted', Accepted, self.handle_accepted)
         self.finalized_sub = rospy.Subscriber('finalized', Finalized, self.handle_finalized)
 
-        self.leader = leader
-        self.acquiring = False
-        self.leader_proposal_id = (0, self.uid) if leader else (-1, '')
-        self.tick_period = rospy.get_param('tick_period')
-        self.live_window = rospy.get_param('live_window')
-        self.last_tick = time()
-        self.last_prep = time()
-    
     def run(self):
         rospy.loginfo(f'{rospy.get_name()} started, uid={self.uid}, leader={str(self.leader)}')
         i = 0
@@ -60,6 +60,8 @@ class PaxosRSM():
             i += self.tick_period
             if i >= self.live_window:
                 self.check_leader()
+                if self.leader:
+                    self.broadcast_results()
                 i = 0
 
     def tick(self):
@@ -78,12 +80,19 @@ class PaxosRSM():
                 self.acquiring = True
             self.proposers[self.current_instance].prepare(self.current_instance)
 
+    def broadcast_results(self):
+        for instance in range(self.current_instance):
+            if self.learners[instance].complete:
+                self.finalized_pub.publish(
+                    instance=instance, value=self.learners[instance].final_value
+                )
+
     def new_instance(self, instance=None):
         with self.lock:
             if instance is None:
                 self.current_instance += 1
             else:
-                self.current_instance = instance
+                self.current_instance = max(instance, self.current_instance)
             self.proposers[self.current_instance] = Proposer(
                 self.uid, self.leader, self.prepare_pub, self.accept_pub
             )
@@ -95,6 +104,7 @@ class PaxosRSM():
             )
 
     def handle_client_request(self, client_request):
+        rospy.loginfo('request received')
         request = (client_request.client_id, client_request.request_id)
         if request not in self.request_history:
             self.new_instance()
@@ -147,6 +157,8 @@ class PaxosRSM():
         )
 
     def handle_accept(self, accept):
+        if accept.instance not in self.acceptors:
+            self.new_instance(accept.instance)
         self.acceptors[accept.instance].handle_accept(accept)
 
     def handle_accepted(self, accepted):
@@ -154,6 +166,10 @@ class PaxosRSM():
             self.learners[accepted.instance].handle_accepted(accepted)
 
     def handle_finalized(self, finalized):
+        if finalized.instance not in self.learners:
+            self.new_instance(finalized.instance)
+        if finalized.instance <= self.finished_instance:
+            return
         self.learners[finalized.instance].final_value = finalized.value
         if self.running_instances.get(finalized.instance) is not None:
             client_id, request_id, value = self.running_instances.pop(finalized.instance)
@@ -169,3 +185,5 @@ class PaxosRSM():
                     client_id=client_id, request_id=request_id,
                     value=value, success=output
                 )
+            rospy.loginfo(f'{rospy.get_name()} executed value {value} '
+                          f'for instance {self.finished_instance}')

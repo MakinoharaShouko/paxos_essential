@@ -1,6 +1,6 @@
 <launch>
-    <param name="majority" value="3" />
-    <param name="num_locks" value="4" />
+    <param name="majority" value="5" />
+    <param name="num_locks" value="2" />
     <param name="tick_period" value="1" />
     <param name="live_window" value="5" />
 

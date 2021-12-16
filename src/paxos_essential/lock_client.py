@@ -1,7 +1,7 @@
 import rospy
 import uuid
 from multiprocessing.pool import ThreadPool
-from paxos_essential.msg import ClientRequest, ClientResponse, TermInput
+from paxos_essential.msg import ClientRequest, ClientResponse
 from time import sleep
 from std_msgs import msg
 
@@ -40,6 +40,7 @@ class LockClient():
             request.request_id = self.n
             request.value = value
             self.request_buffer.append(request)
+            rospy.loginfo('request cached')
             self.n += 1
             if len(self.request_buffer) == self.buffer_size:
                 with ThreadPool(self.buffer_size) as pool:
@@ -66,9 +67,12 @@ class LockClient():
     def send_request(self, request):
         trial = 0
         while trial < self.max_retries and request.request_id not in self.responded_requests:
+            rospy.loginfo('Request sent')
             self.request_pub.publish(request)
             trial += 1
             sleep(self.retry_interval)
+        if trial == self.max_retries:
+            rospy.loginfo('Request timed out')
 
 
 if __name__ == '__main__':
