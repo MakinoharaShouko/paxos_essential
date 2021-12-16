@@ -1,3 +1,3 @@
 int64 instance
-int64 promised_proposal_num
-string promised_proposer_id
+int64 proposal_num
+string proposer_id

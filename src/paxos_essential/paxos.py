@@ -1,6 +1,7 @@
 import rospy
 import uuid
 from paxos_essential.msg import *
+from threading import Lock
 from time import time, sleep
 
 
@@ -165,19 +166,10 @@ class Learner():
             except:
                 rospy.logerr(f'Inconsistent value for proposal {proposal_id}')
         self.proposal_counts[proposal_id][0].add(accepted.acceptor_id)
-        rospy.loginfo(f'{proposal_id} {len(self.proposal_counts[proposal_id][0])}')
 
         if len(self.proposal_counts[proposal_id][0]) == self.majority:
             self.final_acceptors, self.final_value = self.proposal_counts[proposal_id]
             self.finalized_pub.publish(instance=self.instance, value=self.final_value)
-        else:
-            self.accepted_pub.publish(
-                instance=accepted.instance,
-                acceptor_id=accepted.acceptor_id,
-                proposal_num=accepted.proposal_num,
-                proposer_id=accepted.proposer_id,
-                accepted_value=accepted.accepted_value
-            )
 
 
 class PaxosRSM():
@@ -193,6 +185,7 @@ class PaxosRSM():
         self.executed_values = {}
         self.cached_values = {}
         self.running_instances = {}
+        self.lock = Lock()
 
         rospy.init_node('paxos_node')
         rospy.loginfo(f'{rospy.get_name()} started, uid={self.uid}, leader={str(leader)}')
@@ -329,8 +322,10 @@ class PaxosRSM():
                 rospy.loginfo(f'{rospy.get_name()} lost leadership')
 
     def handle_accepted(self, accepted):
+        self.lock.acquire()
         if self.leader:
             self.get_learner(accepted.instance).handle_accepted(accepted)
+        self.lock.release()
 
     def handle_finalized(self, finalized):
         self.get_learner(finalized.instance).final_value = finalized.value

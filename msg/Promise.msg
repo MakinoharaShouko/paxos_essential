@@ -3,5 +3,5 @@ int64 proposal_num
 string proposer_id
 string acceptor_id
 int64 accepted_proposal_num
-int64 accepted_proposer_id
+string accepted_proposer_id
 int64 accepted_value
