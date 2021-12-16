@@ -81,7 +81,7 @@ class PaxosRSM():
             self.proposers[self.current_instance].prepare(self.current_instance)
 
     def broadcast_results(self):
-        for instance in range(self.current_instance):
+        for instance in range(self.current_instance + 1):
             if self.learners[instance].complete:
                 self.finalized_pub.publish(
                     instance=instance, value=self.learners[instance].final_value
@@ -176,6 +176,8 @@ class PaxosRSM():
         else:
             client_id, request_id = None, None
         self.cached_values[finalized.instance] = (client_id, request_id, finalized.value)
+        rospy.loginfo(f'{rospy.get_name()} cached value {finalized.value} '
+                        f'for instance {finalized.instance}')
         while self.finished_instance + 1 in self.cached_values:
             self.finished_instance += 1
             client_id, request_id, value = self.cached_values.pop(self.finished_instance)
