@@ -1,3 +1,4 @@
-int64 instance
 string client_id
-bool output
+int64 request_id
+int64 value
+bool success

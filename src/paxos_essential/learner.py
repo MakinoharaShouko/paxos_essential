@@ -1,36 +1,46 @@
-#!/usr/bin/env python
-# license removed for brevity
+import os
 import rospy
-from paxos_essential.msg import Accepted
+from threading import Lock
+
 
 class Learner():
-    def __init__(self):
-        self.acceptors = {}
-        self.accepted_pairs = {}
-        self.acceptor_num = rospy.get_param('/acceptors')
-        rospy.init_node('learner', anonymous=True)
-        self.accepted_sub = \
-            rospy.Subscriber('accepted', Accepted, self.accepted_callback)
+    def __init__(self, uid, accepted_pub, finalized_pub):
+        self.uid = uid
+        self.majority = rospy.get_param('majority')
+        self.proposal_counts = {} # proposal_id -> [acceptor_ids, accepted_value]
+        self.accepted_proposals = {} # acceptor_id -> proposal_id
+        self.final_acceptors = set()
+        self.final_value = None
+        self.accepted_pub = accepted_pub
+        self.finalized_pub = finalized_pub
+        self.lock = Lock()
 
-    def accepted_callback(self, accepted):
-        if accepted.acceptor_id in self.acceptors:
-            prev = self.acceptors[accepted.acceptor_id]
-            self.accepted_pairs[prev] -= 1
-            if not self.accepted_pairs[prev]:
-                self.accepted_pairs.pop(prev)
-        pair = (accepted.proposer_id, accepted.accepted_number)
-        self.acceptors[accepted.acceptor_id] = pair
-        if pair not in self.accepted_pairs:
-            self.accepted_pairs[pair] = 0
-        self.accepted_pairs[pair] += 1
-        if self.accepted_pairs[pair] > self.acceptor_num / 2:
-            rospy.loginfo("Final value {} from {}"\
-                .format(accepted.accepted_number, accepted.proposer_id))
-            self.accepted_sub.unregister()
+    @property
+    def complete(self):
+        return self.final_value is not None
 
-if __name__ == '__main__':
-    try:
-        learner = Learner()
-        rospy.spin()
-    except rospy.ROSInterruptException:
-        pass
+    def handle_accepted(self, accepted):
+        with self.lock:
+            if self.final_value is not None:
+                if accepted.accepted_value == self.final_value:
+                    self.final_acceptors.add(accepted.acceptor_id)
+                return
+
+            proposal_id = (accepted.proposal_num, accepted.proposer_id)
+            accepted_proposal_id = self.accepted_proposals.get(accepted.acceptor_id)
+            if accepted_proposal_id is not None and accepted_proposal_id >= proposal_id:
+                return
+
+            self.accepted_proposals[accepted.acceptor_id] = proposal_id
+            if accepted_proposal_id is not None:
+                self.proposal_counts[accepted_proposal_id][0].remove(accepted.acceptor_id)
+            if proposal_id not in self.proposal_counts:
+                self.proposal_counts[proposal_id] = [set(), accepted.accepted_value]
+            self.proposal_counts[proposal_id][0].add(accepted.acceptor_id)
+
+            if len(self.proposal_counts[proposal_id][0]) == self.majority:
+                rospy.loginfo(f'{self.uid} learned value {accepted.accepted_value} '
+                            f'from {self.proposal_counts[proposal_id][0]} '
+                            f'at instance {accepted.instance}')
+                self.final_acceptors, self.final_value = self.proposal_counts[proposal_id]
+                self.finalized_pub.publish(instance=accepted.instance, value=self.final_value)

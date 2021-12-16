@@ -1,2 +1,3 @@
+int64 instance
 int64 proposal_num
 string proposer_id

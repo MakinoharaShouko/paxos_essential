@@ -1,8 +1,7 @@
-import argparse
 import rospy
+import sys
 from functools import partial
 from paxos_essential.paxos import PaxosRSM
-import sys
 
 
 def acquire_lock(lock_no, available):
@@ -26,5 +25,7 @@ if __name__ == '__main__':
         [partial(return_lock, i) for i in range(num_locks)]
     leader = (sys.argv[1] == 'leader')
 
-    PaxosRSM(init_state, transitions, leader)
+    rospy.init_node('lock_server', anonymous=False)
+    rsm = PaxosRSM(init_state, transitions, leader)
+    rsm.run()
     rospy.spin()
