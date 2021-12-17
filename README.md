@@ -22,6 +22,10 @@ Ubuntu 20.04; ROS Noetic
 1. Kill default leader by `rosnode kill /lock_server_0`;
 2. A new leader will be elected as shown in the command line logs.
 
+### Node failure
+1. Run `rosnode list` to see all the nodes;
+2. Run `rosnode kill [node_name]` to kill any node. The RSM will work as long as the number of nodes alive is greater than `majority_size` in `launch/lock_server.launch`.
+
 ### Concurrent requests
 1. Set `buffer_size` in `launch/lock_client.launch` to some integer greater than 1;
 2. Publish multiple requests to the command line;
